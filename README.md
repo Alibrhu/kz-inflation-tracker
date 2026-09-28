@@ -35,5 +35,3 @@ Do everyday grocery prices in Shymkent move the way official inflation statistic
 - One store is not the whole city; more stores will be added.
 
 Data is collected for non-commercial student research.
-# kz-inflation-tracker
-Tracking real food prices in Shymkent vs official CPI (stat.gov.kz)
