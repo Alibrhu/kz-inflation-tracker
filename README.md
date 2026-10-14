@@ -23,11 +23,32 @@ Do everyday grocery prices in Shymkent move the way official inflation statistic
 | out_of_stock | product unavailable that day |
 | on_promo | product on promotion that day |
 
+## Dashboard
+
+`app.py` is a Streamlit site (Russian / English) that shows:
+
+- a daily food price index built from `data/prices.csv` (chained geometric mean of day-to-day price changes)
+- price charts for every product
+- a comparison with the official monthly CPI for Shymkent (`data/official_cpi.csv`, food products)
+- auto-generated key findings
+
+Run it locally:
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Refresh official statistics (stat.gov.kz publishes at the start of each month):
+
+```bash
+python update_official_cpi.py
+```
+
 ## Planned
 
-- Match products to official CPI categories (food basket of stat.gov.kz)
-- Build a daily price index and compare it to the official monthly CPI for Shymkent
-- Dashboard + short research note on methodology and findings
+- Match products to official CPI categories (food basket of stat.gov.kz) and weight them
+- Add more stores
 
 ## Limitations
 
