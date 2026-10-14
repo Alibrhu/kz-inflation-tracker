@@ -12,7 +12,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from i18n import MONTHS, TEXTS
+import ui
+from i18n import LANGUAGES, MONTHS, TEXTS
 
 DATA_DIR = Path(__file__).parent / "data"
 PRICES_FILE = DATA_DIR / "prices.csv"
@@ -111,7 +112,8 @@ def compute(df: pd.DataFrame) -> dict:
 
 def pct(x: float, lang: str, signed: bool = True, digits: int = 1) -> str:
     s = f"{x:+.{digits}f}%" if signed else f"{x:.{digits}f}%"
-    return s.replace(".", ",").replace("-", "−") if lang == "ru" else s.replace("-", "−")
+    s = s.replace("-", "−")
+    return s if lang == "en" else s.replace(".", ",")  # ru/kk use a decimal comma
 
 
 def month_label(p: pd.Period, lang: str) -> str:
@@ -126,6 +128,7 @@ def style(fig: go.Figure, y_title: str, height: int = 380) -> go.Figure:
     fig.update_layout(
         height=height, margin=dict(l=8, r=8, t=8, b=8), hovermode="x unified", colorway=PALETTE,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         yaxis_title=y_title, xaxis_title=None,
     )
     fig.update_xaxes(showgrid=False)
@@ -141,29 +144,29 @@ def official_yoy(official: pd.DataFrame, col: str) -> pd.Series:
 
 st.set_page_config(page_title="Shymkent inflation tracker", page_icon="🛒", layout="wide")
 
-head_left, head_right = st.columns([5, 1], vertical_alignment="center")
-with head_right:
+st.markdown(ui.CSS, unsafe_allow_html=True)
+
+_, lang_col = st.columns([3, 2])
+with lang_col:
     lang_label = st.segmented_control(
-        "Language", ["Русский", "English"], default="Русский",
+        "Language", list(LANGUAGES), default=next(iter(LANGUAGES)),
         label_visibility="collapsed", key="lang_choice",
     )
-lang = "en" if lang_label == "English" else "ru"
+lang = LANGUAGES.get(lang_label, "kk")
 T = TEXTS[lang]
 
 prices = load_prices()
 official = load_official()
 
-with head_left:
-    st.title(T["title"])
-st.markdown(T["subtitle"])
-
 if prices.empty:
+    st.markdown(ui.hero(T["title"], T["subtitle"], T["badge"], ""), unsafe_allow_html=True)
     st.info(T["no_data"])
     st.stop()
 
 stores = ", ".join(sorted(prices["store"].unique()))
 last_day = prices["date"].max()
-st.caption(T["updated"].format(date=day_label(last_day, lang) + f" {last_day.year}", stores=stores))
+meta = T["updated"].format(date=day_label(last_day, lang) + f" {last_day.year}", stores=stores)
+st.markdown(ui.hero(T["title"], T["subtitle"], T["badge"], meta), unsafe_allow_html=True)
 
 n_days = prices["date"].nunique()
 if n_days < 2:
@@ -189,19 +192,21 @@ tab_overview, tab_prices, tab_compare, tab_method = st.tabs(
 
 # ------------------------------------------------------------- overview --
 with tab_overview:
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric(T["kpi_days"], n_days, border=True)
-    k2.metric(T["kpi_products"], int((prices["date"] == last_day).sum()), border=True)
-    k3.metric(T["kpi_real"], pct(real_change, lang), border=True,
-              help=T["kpi_real_help"].format(start=day_label(index.index[0], lang)))
+    cards = [
+        ("📅", T["kpi_days"], n_days, T["kpi_days_sub"].format(start=day_label(index.index[0], lang)), "#00a3c4"),
+        ("🛒", T["kpi_products"], int((prices["date"] == last_day).sum()), stores, "#0b4f7c"),
+        ("📈", T["kpi_real"], pct(real_change, lang),
+         T["kpi_real_help"].format(start=day_label(index.index[0], lang)), BLUE),
+    ]
     if has_official:
-        k4.metric(T["kpi_official_yoy"], pct(yoy_rate, lang), border=True,
-                  help=T["kpi_official_yoy_help"].format(month=month_label(latest_month, lang)))
+        cards.append(("🏛️", T["kpi_official_yoy"], pct(yoy_rate, lang),
+                      T["kpi_official_yoy_help"].format(month=month_label(latest_month, lang)), "#f2b705"))
+    st.markdown(ui.kpi_cards(cards), unsafe_allow_html=True)
 
     chart_col, text_col = st.columns([3, 2], gap="large")
 
     with chart_col:
-        st.subheader(T["index_title"])
+        st.markdown(ui.section(T["index_title"]), unsafe_allow_html=True)
         fig = go.Figure()
         fig.add_scatter(x=index.index, y=index.values, name=T["series_real"], mode="lines+markers",
                         line=dict(color=BLUE, width=2), marker=dict(size=7),
@@ -217,7 +222,7 @@ with tab_overview:
         st.caption(T["index_caption"])
 
     with text_col:
-        st.subheader(T["findings"])
+        st.markdown(ui.section(T["findings"]), unsafe_allow_html=True)
         notes = []
         if has_official:
             notes.append(T["f_change"].format(days=days_span, real=pct(real_change, lang),
@@ -240,12 +245,11 @@ with tab_overview:
                                                    official=pct(official.loc[m, "food"] - 100, lang)))
         else:
             notes.append(T["f_monthly_wait"])
-        st.markdown("\n".join(f"- {n}" for n in notes))
-        if n_days < MIN_DAYS_RELIABLE:
-            st.warning(T["f_caveat"].format(min_days=MIN_DAYS_RELIABLE))
+        caveat = T["f_caveat"].format(min_days=MIN_DAYS_RELIABLE) if n_days < MIN_DAYS_RELIABLE else ""
+        st.markdown(ui.findings(notes, caveat), unsafe_allow_html=True)
 
     if (cat_change.abs() >= 0.05).any():
-        st.subheader(T["cat_chart_title"])
+        st.markdown(ui.section(T["cat_chart_title"]), unsafe_allow_html=True)
         moved = cat_change[cat_change.abs() >= 0.05]
         shown = pd.concat([moved.head(8), moved.tail(8)])
         shown = shown[~shown.index.duplicated()].sort_values()
@@ -294,7 +298,7 @@ with tab_prices:
     else:
         st.info(T["pick_products"])
 
-    st.subheader(T["movers_title"])
+    st.markdown(ui.section(T["movers_title"]), unsafe_allow_html=True)
     st.caption(T["movers_caption"])
     in_stock = in_cat[~in_cat["out_of_stock"]].sort_values("date")
     g = in_stock.groupby("product_id")
@@ -327,7 +331,7 @@ with tab_compare:
         months = recent.index.union(monthly.index)
         labels = [month_label(m, lang) for m in months]
 
-        st.subheader(T["compare_title"])
+        st.markdown(ui.section(T["compare_title"]), unsafe_allow_html=True)
         fig = go.Figure()
         fig.add_scatter(x=labels, y=(recent["food"].reindex(months) - 100).values, name=T["series_official"],
                         mode="lines+markers", line=dict(color=ORANGE, width=2), marker=dict(size=8),
@@ -354,7 +358,7 @@ with tab_compare:
                          column_config={c: st.column_config.NumberColumn(format="%+.1f%%")
                                         for c in (T["col_official"], T["col_real"])})
 
-        st.subheader(T["yoy_title"])
+        st.markdown(ui.section(T["yoy_title"]), unsafe_allow_html=True)
         yoy = pd.DataFrame({"food": official_yoy(official, "food"), "all": official_yoy(official, "all")}).dropna()
         yoy = yoy[yoy.index >= yoy.index[-1] - 35]
         x = [month_label(m, lang) for m in yoy.index]
@@ -369,7 +373,8 @@ with tab_compare:
 
 # -------------------------------------------------------------- method --
 with tab_method:
-    st.markdown(T["method_md"].format(stores=stores))
+    with st.container(key="method"):
+        st.markdown(T["method_md"].format(stores=stores))
 
-st.divider()
-st.caption(T["footer"].format(repo=REPO_URL))
+st.markdown(ui.footer(T["footer"].format(repo=f'<a href="{REPO_URL}" target="_blank">GitHub</a>')),
+            unsafe_allow_html=True)
